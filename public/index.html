@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>explicit</title>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <link rel="stylesheet" type="text/css" href="https://developer.spotify.com/web-api/static/css/cached.css">
+    <link rel="stylesheet" type="text/css" href="stylesheets/style.css">
+    <script type='text/javascript' src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
+    <script type='text/javascript' src="javascript/crwdy.js"></script>
+    <script type="text/javascript">
+        function authorize() {
+            var client_id = "8c19a663a15d44719092ddc473b84248"
+            var scope  = "playlist-read-private playlist-modify-public playlist-modify-private";
+            var redirect_uri = "http://explicit.thomasstitt.com/select.html";
+            var state = "some_state";
+
+
+            var url = 'https://accounts.spotify.com/authorize';
+            url += '?response_type=token';
+            url += '&client_id=' + encodeURIComponent(client_id);
+            url += '&scope=' + encodeURIComponent(scope);
+            url += '&redirect_uri=' + encodeURIComponent(redirect_uri);
+            url += '&state=' + encodeURIComponent(state);
+            window.location = url;
+        }
+    </script>
+</head>
+
+<body>
+    <div id="content" class="container">
+        <h1 align="center">explicit</h1>
+        <p align="center" class="textbox">pick a playlist and enjoy the cleaner listening experience after all songs have been made explicit</p>
+        <p align="center"><button class="btn btn-primary" onclick="authorize()">h*** yeah!</button></p>
+    </div>
+</body>
+</html>

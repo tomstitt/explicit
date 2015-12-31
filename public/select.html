@@ -1,0 +1,322 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+    <title>playlist select</title>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <script type='text/javascript' src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
+    <script type='text/javascript' src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/3.0.3/handlebars.min.js"></script>
+    <script type='text/javascript' src="javascript/crwdy.js"></script>
+    <script type='text/javascript' src="javascript/fuzzyset.js"></script>
+    <script type='text/javascript' src="http://fgnass.github.io/spin.js/spin.min.js"></script>
+    <script type="text/javascript" src="/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+    <script type="text/javascript" src="/fancybox/source/helpers/jquery.fancybox-buttons.js?v=1.0.5"></script>
+
+    <link rel="stylesheet" type="text/css" href="https://developer.spotify.com/web-api/static/css/cached.css">
+    <link rel="stylesheet" type="text/css" href="stylesheets/style.css">
+    <link rel="stylesheet" href="/fancybox/source/jquery.fancybox.css?v=2.1.5" type="text/css" media="screen" />
+
+
+      
+    <script type='text/javascript'>//<![CDATA[ 
+        window.onload=function() {
+            // find template and compile it
+            var resultsTemplateSource = $('#results-template').html();
+            var resultsTemplate = Handlebars.compile(resultsTemplateSource);
+            var resultsPlaceholder = document.getElementById('results');
+            var filteredList = [];
+            var nextpage;
+            var height;
+            var exhaust = false;
+            var lock = false;
+            var tol = .8;
+            var qs = hashset(window.location.hash.substring(1));
+            var songCount = 0;
+            var replaceList = [];
+            var existsClean = false;
+
+            var opts = {
+              lines: 13 // The number of lines to draw
+              , length: 28 // The length of each line
+              , width: 9 // The line thickness
+              , radius: 42 // The radius of the inner circle
+              , scale: .25 // Scales overall size of the spinner
+              , corners: 0.8 // Corner roundness (0..1)
+              , color: '#000' // #rgb or #rrggbb or array of colors
+              , opacity: 0.25 // Opacity of the lines
+              , rotate: 0 // The rotation offset
+              , direction: -1 // 1: clockwise, -1: counterclockwise
+              , speed: 1 // Rounds per second
+              , trail: 60 // Afterglow percentage
+              , fps: 20 // Frames per second when using setTimeout() as a fallback for CSS
+              , zIndex: 2e9 // The z-index (defaults to 2000000000)
+              , className: 'spinner' // The CSS class to assign to the spinner
+              , top: '50%' // Top position relative to parent
+              , left: '50%' // Left position relative to parent
+              , shadow: false // Whether to render a shadow
+              , hwaccel: false // Whether to use hardware acceleration
+              , position: 'absolute' // Element positioning
+
+            }
+
+            $.ajax({
+                url: 'https://api.spotify.com/v1/me',
+                headers: {
+                  'Authorization': 'Bearer ' + qs['access_token']
+                },
+                success: function(response) {
+                    qs['user'] = response.id;
+                    searchPlaylists();
+                }
+            }); 
+            
+
+    
+            function searchPlaylists(url) {
+                if (!lock) {
+                    lock = true;
+                    url = url || 'https://api.spotify.com/v1/users/' + qs['user'] + '/playlists';
+                    $.ajax({
+                        url: url,
+                        headers: {
+                            Authorization: 'Bearer ' + qs['access_token']
+                        },
+                        success: function (response) {
+                            // add to the results div object
+                            //response['caller'] = qs['user'];
+                            nextpage = response['next'];
+                            //console.log(url);
+                            //console.log(nextpage);
+
+                            if (nextpage === null || nextpage === url) {
+                                exhaust = true;
+                            }
+
+                            for (p in response['items']) {
+                                // not the owner, we can't add
+                                item = response['items'][p];
+                                if (item['owner']['id'] === qs['user']) {
+                                    filteredList.push(item);
+                                }
+                            }
+                            height = document.body.scrollHeight;
+                            console.log("new height " + height);
+                            resultsPlaceholder.innerHTML = resultsTemplate(filteredList);
+                            lock = false
+                        }
+                    });
+                }
+            };
+
+
+            function explicify(playlist_id, user, obj) {
+                if (obj['explicit']) {
+                    return;
+                }
+                else {
+                    existsClean = true;
+                }
+                songCount += 1;
+                var query = obj['name'] + (obj['artists'][0] ? ' ' + obj['artists'][0]['name'] : '');
+                $.ajax({
+                    headers: { 
+                        Authorization: 'Bearer ' + qs['access_token']
+                    },
+                    url: 'https://api.spotify.com/v1/search',
+                    data: {
+                        q: query,
+                        type: 'track'
+                    },
+                    success: function (response) {
+                        var f = FuzzySet();
+                        var compareObj;
+                        var fuzz;
+                        var fuzzval;
+                        f.add(query);
+                        // maybe just choose a maximum depth
+                        for (r in response['tracks']['items']) {
+                            compareObj = response['tracks']['items'][r];
+                            fuzz = f.get(compareObj['name'] + 
+                                 (compareObj['artists'][0] ? ' ' + compareObj['artists'][0]['name'] : ''));
+                            fuzzval = fuzz[0][0];
+                            //console.log("1: " + fuzz);
+                            if (fuzzval > tol) {
+                                if (compareObj['explicit']) {
+                                    replaceList.push({'title': compareObj['name'],
+                                                  'oldTitle': obj['name'],
+                                                  'uri': compareObj.id,
+                                                  'olduri': obj.id});
+                                    break;
+                                }
+                            }
+                            // we stop looking if tracks stop matching well
+                            else {
+                                break;
+                            }
+                        }
+                        songCount -= 1;
+                        if (songCount == 0) {
+                            if (replaceList.length > 0) {
+                                var s = "<h2 align='center'>Here's what we found:</h2>\n";
+                                for (idx in replaceList) {
+                                    var i = replaceList[idx]
+                                    s += "<p align='center'>" + 
+                                         i['oldTitle'] + " -> " + i['title'] + " [Explicit]" + 
+                                         "</p>\n";
+                                }
+                                s += "<p align='center'><button id='gogogo' user='" + user +
+                                "' playlist-id='" + playlist_id + 
+                                "' class='gogogo btn btn-secondary btn-song'>Grand</button></p>"
+                                $.fancybox({'content' : s});
+                                document.getElementById('gogogo').addEventListener('click', function(e) {
+                                    var target = e.target;
+                                    var playlist_id = target.getAttribute('playlist-id');
+                                    var user = target.getAttribute('user');
+                                    addAndRemove(user, playlist_id);
+                                });
+                            }
+                            else {
+                                h2lightbox('Oo sorry nothing can be done')
+                            }
+
+                        }
+                    }
+                });
+            }
+
+            function h2lightbox(s) {
+                $.fancybox({'content': "<h2 align='center'>" + s + "</h2>"});
+            }
+
+
+            // you may say having the user passed is redundant but it's safer
+            // in case the user trys to operate on a playlist they do not own and we
+            // fail badly
+            function foreachtrack(playlist_id, user, callback, post) {
+                var url = 'https://api.spotify.com/v1/users/' + user + '/playlists/' + playlist_id + '/tracks';
+                $.ajax({
+                    url: url,
+                    headers: { 
+                        Authorization: 'Bearer ' + qs['access_token']
+                    },
+                    success: function (response) {
+                        //console.log(response);
+                        for (t in response['items']) {
+                            var obj = response['items'][t]['track'];
+                            callback(playlist_id, user, obj);
+                        }
+                        post();
+                    }
+                });
+            }
+
+            function addAndRemove(user, playlist_id) {
+                var spinner = new Spinner(opts).spin();
+                $.fancybox({'content': "<div style='position: absolute; width: 0px; left: 50%; top: 50%;'>" +
+                                        spinner.el.innerHTML + "</div>"});
+                var addlist = [];
+                var rmlist = [];
+                for (i in replaceList) {
+                    addlist.push("spotify:track:" + replaceList[i]['uri'])
+                    rmlist.push({'uri': "spotify:track:" + replaceList[i]['olduri']});
+                }
+                var url = "https://api.spotify.com/v1/users/" + 
+                    user + "/playlists/" + playlist_id + 
+                    "/tracks"
+                $.ajax({
+                    'type': 'POST',
+                    'url': url,
+                    'dataType': 'json',
+                    'headers': {
+                        'Authorization': 'Bearer ' + qs['access_token'],
+                        'Content-Type': 'application/json'
+                    },
+                    'data': JSON.stringify({'uris': addlist}),
+                    'success': function(response) {
+                        var snapshot = response.snapshot_id;
+                        $.ajax({
+                            'type': "DELETE",
+                            'url': url,
+                            'dataType': "json",
+                            'headers': {
+                                'Authorization': 'Bearer ' + qs['access_token']
+                            },
+                            'data': JSON.stringify({'tracks': rmlist,
+                                                    'snapshot_id': snapshot}),
+                            'success': function(response) {
+                                console.log("rmd?");
+                                $.fancybox(
+                                    {'content': "<h2>hell yeah!</h>"}
+                                );
+                            }
+                        });
+                    }
+                });
+            };
+
+
+            $.ajax({
+                url: 'https://api.spotify.com/v1/me',
+                headers: {
+                  'Authorization': 'Bearer ' + qs['access_token']
+                },
+                success: function(response) {
+                    qs['user'] = response.id;
+                    searchPlaylists();
+                }
+            }); 
+            
+
+            $(window).scroll(function() {
+                //console.log($(window).scrollTop());
+                //if ($(window).scrollTop() > height) {
+                    if (!exhaust) {
+                        searchPlaylists(nextpage);
+                    }
+                //}
+            });
+
+
+            results.addEventListener('click', function (e) {
+                var target = e.target;
+                if (target !== null && target.classList.contains('playlist')) {
+                    var spinner = new Spinner(opts).spin();
+                    existsClean = false;
+                    $.fancybox({'content': "<div style='position: absolute; width: 0px; left: 50%; top: 50%;'>" +
+                                            spinner.el.innerHTML + "</div>"});
+                    // make a request to the server and store the information
+                    var playlist_id = target.getAttribute('playlist-id');
+                    // we need the owner (usually the user) in case the
+                    // playlist is collaborative and the user is not the
+                    // creator 
+                    var owner_id = target.getAttribute('owner-id');
+                    replaceList = [];
+                    foreachtrack(playlist_id, owner_id, explicify, function() {
+                        if (!existsClean) {
+                            // ;] impressive
+                            h2lightbox("you're as dirty as they come<br>(every track is explicit already)");
+                        }
+                    });
+                }
+            });
+        }//]]>  
+    </script>
+</head>
+
+<body>
+    <div id="content" class="container">
+        <h1 align="center">so pick one of your playlists</h1>
+        <div id="results"></div>
+    </div>
+    <script id="results-template" type="text/x-handlebars-template">
+        {{#each this}}
+        <p align="center">
+            <button playlist-id="{{id}}" owner-id="{{owner.id}}" class="playlist btn btn-secondary btn-playlist"> 
+                {{name}}
+            </button>
+        </p>
+        {{/each}}
+    </script>
+</body>
+</html>
